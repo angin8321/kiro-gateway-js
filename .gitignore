@@ -1,0 +1,7 @@
+# pkg
+node_modules/
+
+# credentials
+.env
+kiro-auth-token.json
+package-lock.json

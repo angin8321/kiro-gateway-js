@@ -1,0 +1,12 @@
+{
+  "name": "simple-kiro-gateway",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2"
+  }
+}
