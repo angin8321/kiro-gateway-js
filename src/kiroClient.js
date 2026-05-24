@@ -1,6 +1,7 @@
 import axios from "axios";
 import crypto from "crypto";
 import { REFRESH_TOKEN, REGION, PROFILE_ARN, KIRO_API_URL } from "./config.js";
+import { getActiveAccount } from "./accountsStore.js";
 
 // Optional HTTP(S) proxy for VPN / corporate networks.
 function buildAxiosConfigWithProxy() {
@@ -43,15 +44,16 @@ function buildAxiosConfigWithProxy() {
 export const httpClient = axios.create(buildAxiosConfigWithProxy());
 
 // Refresh token -> access token
-export async function getAccessToken() {
-  if (!REFRESH_TOKEN) {
-    throw new Error("REFRESH_TOKEN is not configured in environment");
+export async function getAccessToken(refreshTokenOverride) {
+  const token = refreshTokenOverride || REFRESH_TOKEN;
+  if (!token) {
+    throw new Error("REFRESH_TOKEN is not configured in environment or account");
   }
 
   try {
     const response = await httpClient.post(
       `https://prod.${REGION}.auth.desktop.kiro.dev/refreshToken`,
-      { refreshToken: REFRESH_TOKEN }
+      { refreshToken: token }
     );
     if (!response.data?.accessToken) {
       throw new Error("No accessToken in refreshToken response");
@@ -84,7 +86,8 @@ export function buildKiroHeaders(accessToken) {
 
 // High-level helper to call generateAssistantResponse (non-streaming)
 export async function callGenerateAssistantResponse({ model, userContent, stream }) {
-  const accessToken = await getAccessToken();
+  const account = getActiveAccount();
+  const accessToken = await getAccessToken(account?.refreshToken);
   const headers = buildKiroHeaders(accessToken);
 
   const conversationId = crypto.randomUUID();
@@ -108,7 +111,9 @@ export async function callGenerateAssistantResponse({ model, userContent, stream
       },
       history: [],
     },
-    ...(PROFILE_ARN ? { profileArn: PROFILE_ARN } : {}),
+    ...((account?.profileArn || PROFILE_ARN)
+      ? { profileArn: account?.profileArn || PROFILE_ARN }
+      : {}),
   };
 
   if (stream) {

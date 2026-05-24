@@ -9,28 +9,36 @@
     textarea { width: 100%; height: 120px; }
     pre { background: #111; color: #0f0; padding: 10px; white-space: pre-wrap; }
     .row { margin-top: 10px; }
+    .tabs { margin-bottom: 10px; }
+    .tabs button { margin-right: 5px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
   </style>
 </head>
-<body>
+  <body>
   <h1>Simple Kiro Gateway Admin</h1>
 
-  <section>
+  <div class="row">
+    <label>Admin API Key (same as PROXY_API_KEY)</label>
+    <input id="adminKey" type="password" style="width: 300px" />
+  </div>
+
+  <div class="tabs">
+    <button data-tab="models">Models</button>
+    <button data-tab="chat">Chat</button>
+    <button data-tab="usage">Usage</button>
+    <button data-tab="accounts">Accounts</button>
+  </div>
+
+  <section id="panel-models" class="panel active">
     <h2>Check Models</h2>
-    <div class="row">
-      <label>Admin API Key (same as PROXY_API_KEY)</label>
-      <input id="adminKey" type="password" style="width: 300px" />
-    </div>
     <button id="btnModels">GET /v1/models</button>
     <pre id="modelsResult"></pre>
   </section>
 
-  <section>
-    <h2>Usage (Credits)</h2>
-    <button id="btnUsage">GET /v1/usage</button>
-    <pre id="usageResult"></pre>
-  </section>
-
-  <section>
+  <section id="panel-chat" class="panel">
     <h2>Test Chat Completion</h2>
     <div class="row">
       <label>Model</label>
@@ -44,8 +52,55 @@
     <pre id="chatResult"></pre>
   </section>
 
+  <section id="panel-usage" class="panel">
+    <h2>Usage (Credits)</h2>
+    <button id="btnUsage">GET /v1/usage</button>
+    <pre id="usageResult"></pre>
+  </section>
+
+  <section id="panel-accounts" class="panel">
+    <h2>Accounts (Refresh Tokens)</h2>
+    <div class="row">
+      <label>Account ID</label>
+      <input id="accId" style="width: 200px" placeholder="e.g. personal" />
+    </div>
+    <div class="row">
+      <label>Refresh Token</label>
+      <textarea id="accRefresh" placeholder="eyJ..."></textarea>
+    </div>
+    <div class="row">
+      <label>Profile ARN (optional)</label>
+      <input id="accProfile" style="width: 400px" placeholder="arn:aws:codewhisperer:..." />
+    </div>
+    <div class="row">
+      <button id="btnSaveAccount">Save/Update Account</button>
+    </div>
+    <h3>Existing Accounts</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Profile ARN</th>
+          <th>Enabled</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="accountsTableBody"></tbody>
+    </table>
+  </section>
+
   <script>
     const baseUrl = ""; // same origin
+
+    // Tabs switching
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.onclick = () => {
+        const tab = btn.getAttribute("data-tab");
+        document.querySelectorAll(".panel").forEach((p) => {
+          p.classList.toggle("active", p.id === `panel-${tab}`);
+        });
+      };
+    });
 
     document.getElementById("btnModels").onclick = async () => {
       const key = document.getElementById("adminKey").value;
@@ -85,6 +140,82 @@
       const txt = await res.text();
       document.getElementById("usageResult").textContent = txt;
     };
+
+    async function loadAccounts() {
+      const key = document.getElementById("adminKey").value;
+      const res = await fetch(`${baseUrl}/admin/api/accounts`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (!res.ok) {
+        document.getElementById("accountsTableBody").innerHTML = `<tr><td colspan="4">Error: ${res.status}</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      const tbody = document.getElementById("accountsTableBody");
+      tbody.innerHTML = "";
+      (data.accounts || []).forEach((acc) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${acc.id}</td>
+          <td>${acc.profileArn || ""}</td>
+          <td>${acc.enabled ? "yes" : "no"}</td>
+          <td>
+            <button data-act="use" data-id="${acc.id}">Activate</button>
+            <button data-act="del" data-id="${acc.id}">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.onclick = async (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        const id = btn.getAttribute("data-id");
+        const act = btn.getAttribute("data-act");
+        const key = document.getElementById("adminKey").value;
+
+        if (act === "del") {
+          await fetch(`${baseUrl}/admin/api/accounts/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          loadAccounts();
+        } else if (act === "use") {
+          await fetch(`${baseUrl}/admin/api/accounts/${id}/activate`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          loadAccounts();
+        }
+      };
+    }
+
+    document.getElementById("btnSaveAccount").onclick = async () => {
+      const key = document.getElementById("adminKey").value;
+      const id = document.getElementById("accId").value.trim();
+      const refreshToken = document.getElementById("accRefresh").value.trim();
+      const profileArn = document.getElementById("accProfile").value.trim();
+
+      if (!id || !refreshToken) {
+        alert("Account ID dan Refresh Token wajib diisi");
+        return;
+      }
+
+      await fetch(`${baseUrl}/admin/api/accounts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({ id, refreshToken, profileArn, enabled: true }),
+      });
+
+      loadAccounts();
+    };
+
+    // Auto-load accounts when Accounts tab first activated
+    // (simple hook: call once on load)
+    loadAccounts();
   </script>
 </body>
 </html>
