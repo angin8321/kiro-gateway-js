@@ -30,6 +30,7 @@
     <button data-tab="chat">Chat</button>
     <button data-tab="usage">Usage</button>
     <button data-tab="accounts">Accounts</button>
+    <button data-tab="apikeys">API Keys</button>
   </div>
 
   <section id="panel-models" class="panel active">
@@ -101,6 +102,30 @@
         </tr>
       </thead>
       <tbody id="accountsTableBody"></tbody>
+    </table>
+  </section>
+
+  <section id="panel-apikeys" class="panel">
+    <h2>API Keys</h2>
+    <div class="row">
+      <label>Label</label>
+      <input id="keyLabel" style="width: 200px" placeholder="e.g. cli-user" />
+    </div>
+    <div class="row">
+      <button id="btnGenerateKey">Generate New API Key</button>
+    </div>
+    <h3>Existing Keys</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Key</th>
+          <th>Enabled</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="keysTableBody"></tbody>
     </table>
   </section>
 
@@ -357,6 +382,77 @@
         return;
       }
       loadAccounts();
+    };
+
+    async function loadApiKeys() {
+      const key = document.getElementById("adminKey").value;
+      const res = await fetch(`${baseUrl}/admin/api/keys`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const tbody = document.getElementById("keysTableBody");
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="5">Error: ${res.status}</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      tbody.innerHTML = "";
+      (data.keys || []).forEach((k) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${k.label || ""}</td>
+          <td>${k.key}</td>
+          <td>${k.enabled ? "yes" : "no"}</td>
+          <td>${k.createdAt || ""}</td>
+          <td>
+            <button data-act="enable" data-id="${k.id}">Enable</button>
+            <button data-act="disable" data-id="${k.id}">Disable</button>
+            <button data-act="del" data-id="${k.id}">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.onclick = async (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        const id = btn.getAttribute("data-id");
+        const act = btn.getAttribute("data-act");
+        const key = document.getElementById("adminKey").value;
+
+        if (act === "del") {
+          await fetch(`${baseUrl}/admin/api/keys/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          loadApiKeys();
+        } else if (act === "enable" || act === "disable") {
+          await fetch(`${baseUrl}/admin/api/keys/${id}/${act}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          loadApiKeys();
+        }
+      };
+    }
+
+    document.getElementById("btnGenerateKey").onclick = async () => {
+      const key = document.getElementById("adminKey").value;
+      const label = document.getElementById("keyLabel").value.trim();
+      const res = await fetch(`${baseUrl}/admin/api/keys`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) {
+        alert("Failed to generate key: " + res.status);
+        return;
+      }
+      const data = await res.json();
+      alert("New API key generated: " + data.key.key);
+      loadApiKeys();
     };
   </script>
 </body>
