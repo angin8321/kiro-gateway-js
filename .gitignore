@@ -7,5 +7,6 @@ scripts/
 # credentials
 .env
 accounts.json
+api_keys.json
 kiro-auth-token.json
 package-lock.json

@@ -61,7 +61,7 @@ export function addApiKey({ label }) {
     `${Date.now()}_${Math.random().toString(36).slice(2)}`,
     "utf8"
   ).toString("base64url");
-  const key = `sk-${raw}`;
+  const key = `tenet-${raw}`;
 
   const rec = {
     id,
