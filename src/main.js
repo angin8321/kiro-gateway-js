@@ -2,6 +2,7 @@ import express from "express";
 import { PROXY_API_KEY, REGION } from "./config.js";
 import { registerOpenAIRoutes } from "./routes/openai.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { findApiKey } from "./apiKeysStore.js";
 
 const app = express();
 app.use(express.json());
@@ -38,9 +39,12 @@ app.use((req, res, next) => {
       ? authHeader.slice("Bearer ".length)
       : null;
 
-  const valid = bearer === PROXY_API_KEY || xApiKey === PROXY_API_KEY;
+  const candidateKey = bearer || (typeof xApiKey === "string" ? xApiKey : null);
 
-  if (!valid) {
+  const matchEnv = PROXY_API_KEY && candidateKey === PROXY_API_KEY;
+  const matchManaged = candidateKey ? Boolean(findApiKey(candidateKey)) : false;
+
+  if (!matchEnv && !matchManaged) {
     return res.status(401).json({ error: "Invalid API key" });
   }
 

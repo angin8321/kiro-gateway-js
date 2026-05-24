@@ -7,6 +7,12 @@ import {
   deleteAccount,
   setActiveAccount,
 } from "../accountsStore.js";
+import {
+  getApiKeys,
+  addApiKey,
+  deleteApiKey,
+  setApiKeyEnabled,
+} from "../apiKeysStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,4 +83,46 @@ export function registerAdminRoutes(app) {
       }
     }
   );
+
+  // API keys management API (protected by admin key)
+  app.get("/admin/api/keys", requireAdminAuth, (req, res) => {
+    res.json({ keys: getApiKeys() });
+  });
+
+  app.post("/admin/api/keys", requireAdminAuth, (req, res) => {
+    try {
+      const { label } = req.body || {};
+      const rec = addApiKey({ label });
+      res.json({ key: rec });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/admin/api/keys/:id/enable", requireAdminAuth, (req, res) => {
+    try {
+      setApiKeyEnabled(req.params.id, true);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/admin/api/keys/:id/disable", requireAdminAuth, (req, res) => {
+    try {
+      setApiKeyEnabled(req.params.id, false);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/admin/api/keys/:id", requireAdminAuth, (req, res) => {
+    try {
+      deleteApiKey(req.params.id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
 }
