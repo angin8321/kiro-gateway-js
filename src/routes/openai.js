@@ -69,7 +69,40 @@ export function registerOpenAIRoutes(app) {
         });
 
         res.setHeader("Content-Type", "text/event-stream");
-        response.data.pipe(res);
+
+        // Intersep stream: hitung meteringEvent usage sambil meneruskan SSE ke klien
+        let meterBuffer = "";
+        response.data.on("data", (chunk) => {
+          const str = chunk.toString("utf8");
+          meterBuffer += str;
+
+          const meterRegex = /\{"unit":"credit","unitPlural":"credits","usage":([0-9eE+\.-]+)\}/g;
+          let m;
+          let lastEnd = 0;
+          while ((m = meterRegex.exec(meterBuffer)) !== null) {
+            lastEnd = meterRegex.lastIndex;
+            try {
+              const obj = JSON.parse(m[0]);
+              if (typeof obj.usage === "number") {
+                recordUsage(obj.usage, {
+                  accountId: account?.id || "default",
+                  modelId: normalizedModel,
+                });
+              }
+            } catch (_) {}
+          }
+          if (lastEnd > 0) {
+            meterBuffer = meterBuffer.slice(lastEnd);
+          }
+
+          // teruskan chunk ke klien
+          res.write(chunk);
+        });
+
+        response.data.on("end", () => {
+          res.end();
+        });
+
         return;
       }
 

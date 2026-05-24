@@ -1,6 +1,9 @@
 # pkg
 node_modules/
 
+# Scripts
+scripts/
+
 # credentials
 .env
 accounts.json

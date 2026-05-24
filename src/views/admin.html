@@ -42,7 +42,11 @@
     <h2>Test Chat Completion</h2>
     <div class="row">
       <label>Model</label>
-      <input id="model" value="claude-haiku-4.5" style="width: 300px" />
+      <select id="modelSelect" style="width: 320px"></select>
+      <div class="row">
+        <small>Jika daftar kosong, isi manual di bawah:</small>
+        <input id="model" value="claude-haiku-4.5" style="width: 300px" />
+      </div>
     </div>
     <div class="row">
       <label>Prompt</label>
@@ -86,6 +90,7 @@
       <button id="btnSaveAccount">Save/Update Account</button>
     </div>
     <h3>Existing Accounts</h3>
+    <button id="btnLoadAccounts">Load Accounts</button>
     <table>
       <thead>
         <tr>
@@ -101,6 +106,9 @@
 
   <script>
     const baseUrl = ""; // same origin
+
+    // Cache models dari /v1/models untuk dipakai di tab Chat
+    let modelsList = null;
 
     // Tabs switching
     document.querySelectorAll(".tabs button").forEach((btn) => {
@@ -119,11 +127,58 @@
       });
       const txt = await res.text();
       document.getElementById("modelsResult").textContent = txt;
+
+      // Coba parse JSON agar bisa mengisi dropdown model di tab Chat
+      try {
+        const json = JSON.parse(txt);
+        if (Array.isArray(json.data)) {
+          modelsList = json.data;
+        } else if (Array.isArray(json.models)) {
+          modelsList = json.models;
+        } else {
+          modelsList = null;
+        }
+        populateModelSelect();
+      } catch (_) {
+        modelsList = null;
+        populateModelSelect();
+      }
     };
+
+    function populateModelSelect() {
+      const select = document.getElementById("modelSelect");
+      if (!select) return;
+
+      select.innerHTML = "";
+
+      if (!Array.isArray(modelsList) || modelsList.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(manual input)";
+        select.appendChild(opt);
+        return;
+      }
+
+      modelsList.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        const labelParts = [];
+        if (m.display_name) labelParts.push(m.display_name);
+        else labelParts.push(m.id);
+        if (m.credit_multiplier != null) {
+          labelParts.push(`(${m.credit_multiplier}x credit)`);
+        }
+        opt.textContent = labelParts.join(" ");
+        select.appendChild(opt);
+      });
+    }
 
     document.getElementById("btnChat").onclick = async () => {
       const key = document.getElementById("adminKey").value;
-      const model = document.getElementById("model").value;
+      const modelSelect = document.getElementById("modelSelect");
+      let model = modelSelect && modelSelect.value
+        ? modelSelect.value
+        : document.getElementById("model").value;
       const prompt = document.getElementById("prompt").value;
       const stream = document.getElementById("streamFlag").checked;
 
@@ -148,6 +203,7 @@
         return;
       }
 
+      // Streaming mode: parse AWS event-stream dan tampilkan hanya content JSON-nya
       const res = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: {
@@ -163,11 +219,34 @@
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        chatResult.textContent += chunk;
+        buffer += chunk;
+
+        // Cari semua JSON {"content":"...","modelId":"..."} dalam buffer
+        const regex = /\{"content":"([\s\S]*?)","modelId":"[^"]*"\}/g;
+        let match;
+        let lastEnd = 0;
+        while ((match = regex.exec(buffer)) !== null) {
+          lastEnd = regex.lastIndex;
+          try {
+            const obj = JSON.parse(match[0]);
+            if (typeof obj.content === "string") {
+              chatResult.textContent += obj.content;
+            }
+          } catch (_) {
+            // abaikan segmen yang gagal di-parse
+          }
+        }
+
+        // Simpan sisa buffer setelah JSON terakhir (untuk handle partial chunk)
+        if (lastEnd > 0) {
+          buffer = buffer.slice(lastEnd);
+        }
       }
     };
 
@@ -204,7 +283,8 @@
         headers: { Authorization: `Bearer ${key}` },
       });
       if (!res.ok) {
-        document.getElementById("accountsTableBody").innerHTML = `<tr><td colspan="4">Error: ${res.status}</td></tr>`;
+        document.getElementById("accountsTableBody").innerHTML =
+          `<tr><td colspan="4">Error: ${res.status}</td></tr>`;
         return;
       }
       const data = await res.json();
@@ -270,9 +350,14 @@
       loadAccounts();
     };
 
-    // Auto-load accounts when Accounts tab first activated
-    // (simple hook: call once on load)
-    loadAccounts();
+    document.getElementById("btnLoadAccounts").onclick = () => {
+      const key = document.getElementById("adminKey").value.trim();
+      if (!key) {
+        alert("Isi Admin API Key terlebih dahulu");
+        return;
+      }
+      loadAccounts();
+    };
   </script>
 </body>
 </html>
