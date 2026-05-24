@@ -1,7 +1,38 @@
 import crypto from "crypto";
-import { PROXY_API_KEY, FALLBACK_MODELS, PLAN_CREDITS_LIMIT } from "../config.js";
+import {
+  PROXY_API_KEY,
+  FALLBACK_MODELS,
+  PLAN_CREDITS_LIMIT,
+  MODEL_METADATA,
+  MODEL_ALIASES,
+} from "../config.js";
 import { callGenerateAssistantResponse, httpClient } from "../kiroClient.js";
 import { recordUsage, getUsageSummary } from "../usageStore.js";
+import { getActiveAccount } from "../accountsStore.js";
+
+function normalizeModelName(input) {
+  if (!input) return input;
+
+  // alias eksplisit dulu
+  if (MODEL_ALIASES[input]) return MODEL_ALIASES[input];
+
+  const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (MODEL_ALIASES[trimmed]) return MODEL_ALIASES[trimmed];
+  if (MODEL_ALIASES[lower]) return MODEL_ALIASES[lower];
+
+  if (lower === "auto") return "auto";
+
+  // pola "claude opus 4.7" -> "claude-opus-4.7"
+  const m = lower.match(/^claude\s+(opus|sonnet|haiku)\s+([0-9.]+)/);
+  if (m) {
+    return `claude-${m[1]}-${m[2]}`;
+  }
+
+  // generic: spasi jadi dash
+  return lower.replace(/\s+/g, "-");
+}
 
 export function registerOpenAIRoutes(app) {
   // OpenAI-compatible: /v1/chat/completions
@@ -25,11 +56,14 @@ export function registerOpenAIRoutes(app) {
         });
       }
 
+      const rawModel = model;
+      const normalizedModel = normalizeModelName(rawModel);
+      const account = getActiveAccount();
       const isStream = Boolean(stream);
 
       if (isStream) {
         const response = await callGenerateAssistantResponse({
-          model,
+          model: normalizedModel,
           userContent: lastUserMessage.content,
           stream: true,
         });
@@ -40,7 +74,7 @@ export function registerOpenAIRoutes(app) {
       }
 
       const response = await callGenerateAssistantResponse({
-        model,
+        model: normalizedModel,
         userContent: lastUserMessage.content,
         stream: false,
       });
@@ -73,7 +107,10 @@ export function registerOpenAIRoutes(app) {
           try {
             const obj = JSON.parse(m[0]);
             if (typeof obj.usage === "number") {
-              recordUsage(obj.usage);
+              recordUsage(obj.usage, {
+                accountId: account?.id || "default",
+                modelId: normalizedModel,
+              });
             }
           } catch (_) {}
         }
@@ -97,7 +134,7 @@ export function registerOpenAIRoutes(app) {
         res.json({
           id: `chatcmpl-${crypto.randomUUID()}`,
           object: "chat.completion",
-          model,
+          model: normalizedModel,
           choices: [
             {
               index: 0,
@@ -172,11 +209,17 @@ export function registerOpenAIRoutes(app) {
           .json({ error: "PROXY_API_KEY is not configured on the server" });
       }
 
-      const models = FALLBACK_MODELS.map((id) => ({
-        id,
-        object: "model",
-        owned_by: "kiro",
-      }));
+      const models = FALLBACK_MODELS.map((id) => {
+        const meta = MODEL_METADATA[id] || {};
+        return {
+          id,
+          object: "model",
+          owned_by: "kiro",
+          display_name: meta.displayName || id,
+          credit_multiplier: meta.creditMultiplier ?? null,
+          description: meta.description || null,
+        };
+      });
 
       res.json({ object: "list", data: models });
     } catch (error) {
@@ -202,5 +245,15 @@ export function registerOpenAIRoutes(app) {
       plan_usage_percent: percent,
       since: summary.startedAt,
     });
+  });
+
+  app.get("/v1/usage/accounts", (req, res) => {
+    const summary = getUsageSummary();
+    res.json({ per_account: summary.perAccount });
+  });
+
+  app.get("/v1/usage/models", (req, res) => {
+    const summary = getUsageSummary();
+    res.json({ per_model: summary.perModel });
   });
 }
