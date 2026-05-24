@@ -1,6 +1,7 @@
 import axios from "axios";
 import crypto from "crypto";
 import { REFRESH_TOKEN, REGION, PROFILE_ARN, KIRO_API_URL } from "./config.js";
+import { getActiveAccount } from "./accountsStore.js";
 
 // Optional HTTP(S) proxy for VPN / corporate networks.
 function buildAxiosConfigWithProxy() {
@@ -85,8 +86,8 @@ export function buildKiroHeaders(accessToken) {
 
 // High-level helper to call generateAssistantResponse (non-streaming)
 export async function callGenerateAssistantResponse({ model, userContent, stream }) {
-  // Gunakan konfigurasi dari ENV (.env) saja untuk auth
-  const accessToken = await getAccessToken();
+  const account = getActiveAccount();
+  const accessToken = await getAccessToken(account?.refreshToken);
   const headers = buildKiroHeaders(accessToken);
 
   const conversationId = crypto.randomUUID();
@@ -110,7 +111,9 @@ export async function callGenerateAssistantResponse({ model, userContent, stream
       },
       history: [],
     },
-    ...(PROFILE_ARN ? { profileArn: PROFILE_ARN } : {}),
+    ...((account?.profileArn || PROFILE_ARN)
+      ? { profileArn: account?.profileArn || PROFILE_ARN }
+      : {}),
   };
 
   if (stream) {
