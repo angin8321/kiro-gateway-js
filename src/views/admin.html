@@ -48,6 +48,12 @@
       <label>Prompt</label>
       <textarea id="prompt">Halo, jelaskan apa itu Simple Kiro Gateway secara singkat.</textarea>
     </div>
+    <div class="row">
+      <label>
+        <input id="streamFlag" type="checkbox" />
+        Stream
+      </label>
+    </div>
     <button id="btnChat">POST /v1/chat/completions</button>
     <pre id="chatResult"></pre>
   </section>
@@ -56,6 +62,10 @@
     <h2>Usage (Credits)</h2>
     <button id="btnUsage">GET /v1/usage</button>
     <pre id="usageResult"></pre>
+    <button id="btnUsageAccounts">GET /v1/usage/accounts</button>
+    <pre id="usageAccountsResult"></pre>
+    <button id="btnUsageModels">GET /v1/usage/models</button>
+    <pre id="usageModelsResult"></pre>
   </section>
 
   <section id="panel-accounts" class="panel">
@@ -115,6 +125,28 @@
       const key = document.getElementById("adminKey").value;
       const model = document.getElementById("model").value;
       const prompt = document.getElementById("prompt").value;
+      const stream = document.getElementById("streamFlag").checked;
+
+      const chatResult = document.getElementById("chatResult");
+      chatResult.textContent = "";
+
+      if (!stream) {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            stream: false,
+          }),
+        });
+        const txt = await res.text();
+        chatResult.textContent = txt;
+        return;
+      }
 
       const res = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
@@ -125,11 +157,18 @@
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: prompt }],
-          stream: false,
+          stream: true,
         }),
       });
-      const txt = await res.text();
-      document.getElementById("chatResult").textContent = txt;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        chatResult.textContent += chunk;
+      }
     };
 
     document.getElementById("btnUsage").onclick = async () => {
@@ -139,6 +178,24 @@
       });
       const txt = await res.text();
       document.getElementById("usageResult").textContent = txt;
+    };
+
+    document.getElementById("btnUsageAccounts").onclick = async () => {
+      const key = document.getElementById("adminKey").value;
+      const res = await fetch(`${baseUrl}/v1/usage/accounts`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const txt = await res.text();
+      document.getElementById("usageAccountsResult").textContent = txt;
+    };
+
+    document.getElementById("btnUsageModels").onclick = async () => {
+      const key = document.getElementById("adminKey").value;
+      const res = await fetch(`${baseUrl}/v1/usage/models`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const txt = await res.text();
+      document.getElementById("usageModelsResult").textContent = txt;
     };
 
     async function loadAccounts() {
