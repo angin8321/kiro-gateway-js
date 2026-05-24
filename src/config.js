@@ -28,3 +28,7 @@ export const FALLBACK_MODELS = [
   "minimax-m2.5",
   "qwen3-coder-next",
 ];
+
+// Optional: plan credits limit (for usage reporting)
+// Example: 2000 means "2000 credits covered in plan"
+export const PLAN_CREDITS_LIMIT = Number(process.env.PLAN_CREDITS_LIMIT || 0);

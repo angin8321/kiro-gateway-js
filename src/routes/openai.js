@@ -1,6 +1,7 @@
 import crypto from "crypto";
-import { PROXY_API_KEY, FALLBACK_MODELS } from "../config.js";
+import { PROXY_API_KEY, FALLBACK_MODELS, PLAN_CREDITS_LIMIT } from "../config.js";
 import { callGenerateAssistantResponse, httpClient } from "../kiroClient.js";
+import { recordUsage, getUsageSummary } from "../usageStore.js";
 
 export function registerOpenAIRoutes(app) {
   // OpenAI-compatible: /v1/chat/completions
@@ -65,6 +66,18 @@ export function registerOpenAIRoutes(app) {
       });
 
       response.data.on("end", () => {
+        // Extract meteringEvent usage and accumulate credits
+        const meterRegex = /\{"unit":"credit","unitPlural":"credits","usage":([0-9eE+\.-]+)\}/g;
+        let m;
+        while ((m = meterRegex.exec(buffer)) !== null) {
+          try {
+            const obj = JSON.parse(m[0]);
+            if (typeof obj.usage === "number") {
+              recordUsage(obj.usage);
+            }
+          } catch (_) {}
+        }
+
         let text = "";
         const regex = /\{"content":"([\s\S]*?)","modelId":"[^"]*"\}/g;
         let match;
@@ -170,5 +183,24 @@ export function registerOpenAIRoutes(app) {
       const status = error?.response?.status || 500;
       res.status(status).json({ error: error?.message || "Request failed" });
     }
+  });
+
+  // Usage summary based on meteringEvent credits (since process start)
+  app.get("/v1/usage", (req, res) => {
+    const summary = getUsageSummary();
+    const limit = PLAN_CREDITS_LIMIT && !Number.isNaN(PLAN_CREDITS_LIMIT)
+      ? PLAN_CREDITS_LIMIT
+      : null;
+
+    const percent = limit && limit > 0
+      ? (summary.totalCreditsUsed / limit) * 100
+      : null;
+
+    res.json({
+      total_credits_used: summary.totalCreditsUsed,
+      plan_credits_limit: limit,
+      plan_usage_percent: percent,
+      since: summary.startedAt,
+    });
   });
 }

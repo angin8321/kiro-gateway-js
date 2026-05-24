@@ -25,6 +25,12 @@
   </section>
 
   <section>
+    <h2>Usage (Credits)</h2>
+    <button id="btnUsage">GET /v1/usage</button>
+    <pre id="usageResult"></pre>
+  </section>
+
+  <section>
     <h2>Test Chat Completion</h2>
     <div class="row">
       <label>Model</label>
@@ -69,6 +75,15 @@
       });
       const txt = await res.text();
       document.getElementById("chatResult").textContent = txt;
+    };
+
+    document.getElementById("btnUsage").onclick = async () => {
+      const key = document.getElementById("adminKey").value;
+      const res = await fetch(`${baseUrl}/v1/usage`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const txt = await res.text();
+      document.getElementById("usageResult").textContent = txt;
     };
   </script>
 </body>
